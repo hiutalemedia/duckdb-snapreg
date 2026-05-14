@@ -1,0 +1,233 @@
+# duckdb-snapreg extension tests
+
+require snapreg
+
+# ════════════════════════════════════════════════════════════
+# snap_rational
+# ════════════════════════════════════════════════════════════
+
+query II
+SELECT snap_rational(0.5, 16).num, snap_rational(0.5, 16).den
+----
+1	2
+
+query II
+SELECT snap_rational(0.3333333333, 16).num, snap_rational(0.3333333333, 16).den
+----
+1	3
+
+query II
+SELECT snap_rational(-2.0, 16).num, snap_rational(-2.0, 16).den
+----
+-2	1
+
+query II
+SELECT snap_rational(1.6666666667, 16).num, snap_rational(1.6666666667, 16).den
+----
+5	3
+
+query II
+SELECT snap_rational(0.0, 16).num, snap_rational(0.0, 16).den
+----
+0	1
+
+# denominator too small to snap 1/3
+query I
+SELECT snap_rational(0.3333333333, 2) IS NULL
+----
+1
+
+query II
+SELECT snap_rational(-0.25, 16).num, snap_rational(-0.25, 16).den
+----
+-1	4
+
+# ════════════════════════════════════════════════════════════
+# residual_hint
+# ════════════════════════════════════════════════════════════
+
+# [3,4,4,3,4]: range=1 (tight), 2 distinct values (binary), variance=0.24 (nearly_constant)
+query IIII
+SELECT h.range_tight, h.nearly_constant, h.binary_valued, h.n_distinct
+FROM (SELECT residual_hint([3.0, 4.0, 4.0, 3.0, 4.0]) AS h) t
+----
+1	1	1	2
+
+# [5,5,5,5]: constant → all flags true, mean=5
+query III
+SELECT h.nearly_constant, h.n_distinct, h.mean_val
+FROM (SELECT residual_hint([5.0, 5.0, 5.0, 5.0]) AS h) t
+----
+1	1	5.0
+
+# [1,2,3,4,5]: perfectly linear vs index
+query I
+SELECT h.nearly_linear
+FROM (SELECT residual_hint([1.0, 2.0, 3.0, 4.0, 5.0]) AS h) t
+----
+1
+
+query I
+SELECT residual_hint(NULL) IS NULL
+----
+1
+
+# ════════════════════════════════════════════════════════════
+# equation_agg — perfect fit: target = 2*feature + 1
+# Two examples, all points consistent.
+# Pairwise: any pair gives slope=(y2-y1)/(x2-x1)=2, intercept=1.
+# ════════════════════════════════════════════════════════════
+
+statement ok
+CREATE TEMP TABLE t_perfect AS SELECT * FROM (VALUES
+    (3.0, 1.0, 0, 0, 16),
+    (5.0, 2.0, 0, 1, 16),
+    (7.0, 3.0, 0, 2, 16),
+    (3.0, 1.0, 1, 3, 16),
+    (7.0, 3.0, 1, 4, 16)
+) t(target, feature, ex_id, row_idx, max_den);
+
+query IIIIIII
+SELECT eq.slope_num, eq.slope_den, eq.intercept_num, eq.intercept_den,
+       eq.mismatches, eq.n_good, eq.consistent
+FROM (SELECT equation_agg(target, feature, ex_id, row_idx, max_den) AS eq FROM t_perfect) t
+----
+2	1	1	1	0	5	1
+
+# ════════════════════════════════════════════════════════════
+# equation_agg — constant target: slope=0, intercept=5
+# All x differ so no divide-by-zero, but all y=5.
+# Every pair gives dy/dx=0 → slope=0. Intercept=5 from every point.
+# ════════════════════════════════════════════════════════════
+
+statement ok
+CREATE TEMP TABLE t_const AS SELECT * FROM (VALUES
+    (5.0, 1.0, 0, 0, 16),
+    (5.0, 2.0, 0, 1, 16),
+    (5.0, 3.0, 0, 2, 16)
+) t(target, feature, ex_id, row_idx, max_den);
+
+query IIII
+SELECT eq.slope_num, eq.slope_den, eq.intercept_num, eq.intercept_den
+FROM (SELECT equation_agg(target, feature, ex_id, row_idx, max_den) AS eq FROM t_const) t
+----
+0	1	5	1
+
+# ════════════════════════════════════════════════════════════
+# equation_agg — fraction slope: target = (1/2)*feature + 0
+# All features even so integer validation passes everywhere.
+# ════════════════════════════════════════════════════════════
+
+statement ok
+CREATE TEMP TABLE t_frac AS SELECT * FROM (VALUES
+    (1.0, 2.0, 0, 0, 16),
+    (2.0, 4.0, 0, 1, 16),
+    (3.0, 6.0, 0, 2, 16)
+) t(target, feature, ex_id, row_idx, max_den);
+
+query III
+SELECT eq.slope_num, eq.slope_den, eq.consistent
+FROM (SELECT equation_agg(target, feature, ex_id, row_idx, max_den) AS eq FROM t_frac) t
+----
+1	2	1
+
+# ════════════════════════════════════════════════════════════
+# equation_agg — mismatch via consistency failure across examples
+# target=3*feature fits example 0 perfectly.
+# Example 1 has one wrong value (10 instead of 9).
+# Pairwise finds slope=3, intercept=0 (from good pairs).
+# Validates all 6: row_idx=5 fails → mismatches=1, consistent=0.
+# ════════════════════════════════════════════════════════════
+
+statement ok
+CREATE TEMP TABLE t_mm AS SELECT * FROM (VALUES
+    (3.0,  1.0, 0, 0, 16),
+    (6.0,  2.0, 0, 1, 16),
+    (9.0,  3.0, 0, 2, 16),
+    (3.0,  1.0, 1, 3, 16),
+    (6.0,  2.0, 1, 4, 16),
+    (10.0, 3.0, 1, 5, 16)   -- should be 9
+) t(target, feature, ex_id, row_idx, max_den);
+
+query IIIII
+SELECT eq.slope_num, eq.slope_den, eq.mismatches, eq.n_good, eq.consistent
+FROM (SELECT equation_agg(target, feature, ex_id, row_idx, max_den) AS eq FROM t_mm) t
+----
+3	1	1	5	0
+
+query I
+SELECT eq.bad_indices[1]
+FROM (SELECT equation_agg(target, feature, ex_id, row_idx, max_den) AS eq FROM t_mm) t
+----
+5
+
+# ════════════════════════════════════════════════════════════
+# equation_agg — high-leverage outlier in feature space
+# target = feature + 1 except point (20, 1) which should be 21.
+# OLS would be destroyed by x=20; pairwise finds slope=1 from good pairs.
+# ════════════════════════════════════════════════════════════
+
+statement ok
+CREATE TEMP TABLE t_leverage AS SELECT * FROM (VALUES
+    (2.0,  1.0, 0, 0, 16),
+    (3.0,  2.0, 0, 1, 16),
+    (4.0,  3.0, 0, 2, 16),
+    (6.0,  5.0, 0, 3, 16),
+    (1.0, 20.0, 0, 4, 16)   -- outlier: 20+1=21, but target=1
+) t(target, feature, ex_id, row_idx, max_den);
+
+query III
+SELECT eq.slope_num, eq.slope_den, eq.mismatches
+FROM (SELECT equation_agg(target, feature, ex_id, row_idx, max_den) AS eq FROM t_leverage) t
+----
+1	1	1
+
+query I
+SELECT eq.bad_indices[1]
+FROM (SELECT equation_agg(target, feature, ex_id, row_idx, max_den) AS eq FROM t_leverage) t
+----
+4
+
+# ════════════════════════════════════════════════════════════
+# equation_agg — GROUP BY feat_name
+# comp_x: slope=2, intercept=1. n_colors: slope=0, intercept=3.
+# ════════════════════════════════════════════════════════════
+
+statement ok
+CREATE TEMP TABLE t_multi AS SELECT * FROM (VALUES
+    ('comp_x',   3.0, 1.0, 0, 0, 16),
+    ('comp_x',   5.0, 2.0, 0, 1, 16),
+    ('comp_x',   7.0, 3.0, 0, 2, 16),
+    ('n_colors', 3.0, 1.0, 0, 0, 16),
+    ('n_colors', 3.0, 2.0, 0, 1, 16),
+    ('n_colors', 3.0, 3.0, 0, 2, 16)
+) t(feat_name, target, feature, ex_id, row_idx, max_den);
+
+query TIIIII
+SELECT feat_name, eq.slope_num, eq.slope_den, eq.intercept_num, eq.intercept_den, eq.consistent
+FROM (
+    SELECT feat_name, equation_agg(target, feature, ex_id, row_idx, max_den) AS eq
+    FROM t_multi GROUP BY feat_name
+) t ORDER BY feat_name
+----
+comp_x	2	1	1	1	1
+n_colors	0	1	3	1	1
+
+# ════════════════════════════════════════════════════════════
+# equation_agg — fewer than 2 points → NULL
+# ════════════════════════════════════════════════════════════
+
+statement ok
+CREATE TEMP TABLE t_single AS SELECT * FROM (VALUES
+    (5.0, 3.0, 0, 0, 16)
+) t(target, feature, ex_id, row_idx, max_den);
+
+query I
+SELECT equation_agg(target, feature, ex_id, row_idx, max_den) IS NULL FROM t_single
+----
+1
+
+# Cleanup
+statement ok
+DROP TABLE t_perfect; DROP TABLE t_const; DROP TABLE t_frac;
+DROP TABLE t_mm; DROP TABLE t_leverage; DROP TABLE t_multi; DROP TABLE t_single;

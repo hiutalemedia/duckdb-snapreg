@@ -1,6 +1,6 @@
 #define DUCKDB_EXTENSION_MAIN
 
-#include "waddle_extension.hpp"
+#include "snapreg_extension.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
@@ -11,42 +11,42 @@
 
 namespace duckdb {
 
-inline void WaddleScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
+inline void SnapregScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
 	auto &name_vector = args.data[0];
 	UnaryExecutor::Execute<string_t, string_t>(name_vector, result, args.size(), [&](string_t name) {
 		return StringVector::AddString(result, "...........🦆 " + name.GetString());
 	});
 }
 
-inline void WaddleOpenSSLVersionScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
+inline void SnapregOpenSSLVersionScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
 	auto &name_vector = args.data[0];
 	UnaryExecutor::Execute<string_t, string_t>(name_vector, result, args.size(), [&](string_t name) {
-		return StringVector::AddString(result, "Waddle " + name.GetString() + ", my linked OpenSSL version is " +
+		return StringVector::AddString(result, "Snapreg " + name.GetString() + ", my linked OpenSSL version is " +
 		                                           OPENSSL_VERSION_TEXT);
 	});
 }
 
 static void LoadInternal(ExtensionLoader &loader) {
 	// Register a scalar function
-	auto waddle_scalar_function =
-	    ScalarFunction("waddle", {LogicalType::VARCHAR}, LogicalType::VARCHAR, WaddleScalarFun);
+	auto snapreg_scalar_function =
+	    ScalarFunction("snapreg", {LogicalType::VARCHAR}, LogicalType::VARCHAR, SnapregScalarFun);
 
-	loader.RegisterFunction(waddle_scalar_function);
+	loader.RegisterFunction(snapreg_scalar_function);
 
 	// Register another scalar function
-	auto waddle_openssl_version_scalar_function = ScalarFunction("waddle_openssl_version", {LogicalType::VARCHAR},
-	                                                             LogicalType::VARCHAR, WaddleOpenSSLVersionScalarFun);
-	loader.RegisterFunction(waddle_openssl_version_scalar_function);
+	auto snapreg_openssl_version_scalar_function = ScalarFunction("snapreg_openssl_version", {LogicalType::VARCHAR},
+	                                                             LogicalType::VARCHAR, SnapregOpenSSLVersionScalarFun);
+	loader.RegisterFunction(snapreg_openssl_version_scalar_function);
 }
 
-void WaddleExtension::Load(ExtensionLoader &loader) {
+void SnapregExtension::Load(ExtensionLoader &loader) {
 	LoadInternal(loader);
 }
-std::string WaddleExtension::Name() {
-	return "waddle";
+std::string SnapregExtension::Name() {
+	return "snapreg";
 }
 
-std::string WaddleExtension::Version() const {
+std::string SnapregExtension::Version() const {
 #ifdef EXT_VERSION_WADDLE
 	return EXT_VERSION_WADDLE;
 #else
@@ -58,7 +58,7 @@ std::string WaddleExtension::Version() const {
 
 extern "C" {
 
-DUCKDB_CPP_EXTENSION_ENTRY(waddle, loader) {
+DUCKDB_CPP_EXTENSION_ENTRY(snapreg, loader) {
 	duckdb::LoadInternal(loader);
 }
 }
