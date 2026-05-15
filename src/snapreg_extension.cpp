@@ -10,39 +10,29 @@ void RegisterEquationAgg(ExtensionLoader &loader);
 void RegisterResidualHint(ExtensionLoader &loader);
 
 void SnapregExtension::Load(ExtensionLoader &loader) {
-	RegisterSnapRational(loader);
-	RegisterEquationAgg(loader);
-	RegisterResidualHint(loader);
+    RegisterSnapRational(loader);
+    RegisterEquationAgg(loader);
+    RegisterResidualHint(loader);
 }
 
 std::string SnapregExtension::Version() const {
 #ifdef EXT_VERSION_SNAPREG
-	return EXT_VERSION_SNAPREG;
+    return EXT_VERSION_SNAPREG;
 #else
-	return "dev";
+    return "dev";
 #endif
 }
 
 } // namespace duckdb
 
+// ─────────────────────────────────────────────────────────────
+// Modern loadable extension entry point
+// ─────────────────────────────────────────────────────────────
 extern "C" {
 
-DUCKDB_EXTENSION_API void snapreg_init(duckdb::DatabaseInstance &db) {
-	duckdb::DuckDB db_wrapper(db);
-	db_wrapper.LoadStaticExtension<duckdb::SnapregExtension>();
-}
-
-// v1.5+ loadable extension entry point
-DUCKDB_EXTENSION_API void snapreg_duckdb_cpp_init(duckdb::DatabaseInstance &db) {
-	snapreg_init(db);
-}
-
-DUCKDB_EXTENSION_API const char *snapreg_version() {
-	return duckdb::DuckDB::LibraryVersion();
+DUCKDB_CPP_EXTENSION_ENTRY(snapreg, loader) {
+    duckdb::SnapregExtension ext;
+    ext.Load(loader);
 }
 
 } // extern "C"
-
-#ifndef DUCKDB_EXTENSION_MAIN
-#error DUCKDB_EXTENSION_MAIN not defined
-#endif
