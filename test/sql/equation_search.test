@@ -1,3 +1,6 @@
+# name: test/sql/equation_search.test
+# group: [sql]
+
 # duckdb-snapreg extension tests
 
 require snapreg

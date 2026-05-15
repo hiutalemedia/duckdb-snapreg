@@ -35,7 +35,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 
 	// Register another scalar function
 	auto snapreg_openssl_version_scalar_function = ScalarFunction("snapreg_openssl_version", {LogicalType::VARCHAR},
-	                                                             LogicalType::VARCHAR, SnapregOpenSSLVersionScalarFun);
+	                                                              LogicalType::VARCHAR, SnapregOpenSSLVersionScalarFun);
 	loader.RegisterFunction(snapreg_openssl_version_scalar_function);
 }
 
